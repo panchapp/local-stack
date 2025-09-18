@@ -1,0 +1,79 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres-database
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DATABASE}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - '${POSTGRES_PORT}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    networks:
+      - panchapp-network
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U panchapp_user -d panchapp_db']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # NestJS Core Application
+  core-app:
+    build:
+      context: ../core.nest-js
+      dockerfile: ../core.nest-js/Dockerfile
+      target: development
+    container_name: core-service
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${CORE_NODE_ENV}
+      PORT: ${CORE_PORT}
+      POSTGRES_URL: ${POSTGRES_URL}
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_DATABASE: ${POSTGRES_DATABASE}
+    ports:
+      - '${CORE_PORT}:3000'
+    volumes:
+      - ../core.nest-js:/app
+      - /app/node_modules
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - panchapp-network
+    command: npm run start:dev
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+      PGADMIN_LISTEN_PORT: ${PGADMIN_PORT}
+    ports:
+      - '${PGADMIN_PORT}:${PGADMIN_PORT}'
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - panchapp-network
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  panchapp-network:
+    driver: bridge
